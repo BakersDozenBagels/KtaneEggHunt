@@ -39,6 +39,8 @@ public class EggHuntingScript : MonoBehaviour
         Info = GetComponent<KMBombInfo>();
         GetComponent<KMBombModule>().OnActivate += () => _enabled = true;
 
+        GetComponent<KMAudio>().PlaySoundAtTransform("Birdsong", transform);
+
         StartCoroutine(WatchSolves());
 
         Buttons[0].OnInteract += FFLeft;
@@ -83,18 +85,30 @@ public class EggHuntingScript : MonoBehaviour
         int[] nextFrame = new int[] { 1, 1, 1, 1 };
         int[] speedUp = new int[4];
         int nextPlace = 1;
+        int time = 0;
 
-        while(nextFrame.Any(next => next <= stages))
+        while(nextFrame.Any(next => next <= stages + 1))
         {
             bool specialAvailable = true;
             bool foil = false;
             bool placeTaken = false;
             int magnet = -1;
+            bool[] grabbed = new bool[4];
 
             foreach(int h in Enumerable.Range(0, 4)
-                .Where(i => nextFrame[i] <= stages && TimeFromTo(positions[i], goals[i]) <= progress[i])
+                .Where(i => nextFrame[i] <= stages + 1 && TimeFromTo(positions[i], goals[i]) * (speedUp[i] == 0 ? 2 : 1) <= progress[i])
                 .OrderBy(i => nextFrame[i]).ThenBy(i => Rng.value))
             {
+                grabbed[h] = true;
+
+                if(nextFrame[h] == stages + 1)
+                {
+                    _placings[h] = nextPlace;
+                    placeTaken = true;
+                    nextFrame[h]++;
+                    continue;
+                }
+
                 while(nextFrame[h] >= _stages.Count)
                     _stages.Add(new Frame());
 
@@ -108,10 +122,12 @@ public class EggHuntingScript : MonoBehaviour
                     --speedUp[h];
 
                 Egg egg = (Egg)(1 << h);
-                if(specialAvailable && egg == frameSpecialColors[nextFrame[h] - 1])
+                if(specialAvailable && nextFrame[h] > 1 && egg == frameSpecialColors[nextFrame[h] - 1])
                 {
-                    Egg special = frameSpecials[nextFrame[h] - 1];
-                    egg |= special;
+                    Egg special = frameSpecials[nextFrame[h] - 2];
+                    EggData data = _stages[nextFrame[h] - 1].GetEggs().FirstOrDefault(d => (d.Egg & (Egg)(1 << h)) != Egg.None);
+                    data.Egg |= special;
+                    _stages[nextFrame[h] - 1].AddEgg(data);
                     specialAvailable = false;
 
                     if(special == Egg.Special)
@@ -127,11 +143,7 @@ public class EggHuntingScript : MonoBehaviour
                 goals[h] = pos;
                 progress[h] = 0;
 
-                if(++nextFrame[h] == stages)
-                {
-                    _placings[h] = nextPlace;
-                    placeTaken = true;
-                }
+                nextFrame[h]++;
             }
 
             if(magnet != -1)
@@ -145,14 +157,19 @@ public class EggHuntingScript : MonoBehaviour
                     progress[h] = -Math.Abs(progress[h]);
 
             for(int h = 0; h < 4; ++h)
-            {
                 ++progress[h];
-                if(speedUp[h] != 0)
-                    ++progress[h];
-            }
+
+            if(time == 0)
+                Debug.LogFormat("[Egg Hunt #{0}]: At time 0, all hunters pick up their baskets and begin.", _id);
+            else
+                for(int i = 0; i < 4; ++i)
+                    if(grabbed[i])
+                        Debug.LogFormat("[Egg Hunt #{0}]: At time {1}, {2} grabbed egg #{3}.", _id, time, Name(i), nextFrame[i] - 2);
 
             if(placeTaken)
                 ++nextPlace;
+
+            time++;
         }
 
         string log = _stages.Select(f => f.ToString()).Join("\n[Egg Hunt #{0}]: ");
@@ -160,6 +177,22 @@ public class EggHuntingScript : MonoBehaviour
         Debug.LogFormat("[Egg Hunt #{0}]: The stages are as follows:\n[Egg Hunt #{0}]: " + log, _id);
         Debug.LogFormat("[Egg Hunt #{0}]: The awards should be: Red: {1} Green: {2} Blue: {3} Yellow: {4}", _id, _placings[0], _placings[1], _placings[2], _placings[3]);
         ShowStage(0);
+    }
+
+    private string Name(int i)
+    {
+        switch(i)
+        {
+            case 0:
+                return "Ruby";
+            case 1:
+                return "Vera";
+            case 2:
+                return "Blake";
+            case 3:
+                return "Jane";
+        }
+        return "Nobody";
     }
 
     private IEnumerator WatchSolves()
@@ -173,6 +206,7 @@ public class EggHuntingScript : MonoBehaviour
             {
                 _currentStage = c;
                 ShowStage(_currentStage);
+                GetComponent<KMAudio>().PlaySoundAtTransform("Birdsong", transform);
             }
         }
     }
@@ -234,6 +268,7 @@ public class EggHuntingScript : MonoBehaviour
             Buttons[2].transform.parent.gameObject.SetActive(false);
             Debug.LogFormat("[Egg Hunt #{0}]: Module correggctly solved!", _id);
             GetComponent<KMBombModule>().HandlePass();
+            StartCoroutine(PlaySolve());
         }
         else
         {
@@ -241,6 +276,13 @@ public class EggHuntingScript : MonoBehaviour
             GetComponent<KMBombModule>().HandleStrike();
             ShowStage(0);
         }
+    }
+
+    private IEnumerator PlaySolve()
+    {
+        GetComponent<KMAudio>().PlaySoundAtTransform("Yay", transform);
+        yield return new WaitForSeconds(4.133f);
+        GetComponent<KMAudio>().PlaySoundAtTransform("Cheer", transform);
     }
 
     private void ShowMode()
@@ -330,7 +372,7 @@ public class EggHuntingScript : MonoBehaviour
         int x = (a / 3) - (b / 3);
         int y = (a % 3) - (b % 3);
 
-        return 2 * (x * x + y * y);
+        return x * x + y * y;
     }
 
     private class Frame
@@ -366,8 +408,8 @@ public class EggHuntingScript : MonoBehaviour
             if(row < 0 || col < 0 || row > SIZE || col > SIZE)
                 throw new ArgumentOutOfRangeException("Bad Position: " + row + " " + col);
 
-            if(Eggs[SIZE * row + col] != Egg.None)
-                throw new InvalidOperationException("Duplicate Position: " + row + " " + col);
+            //if(Eggs[SIZE * row + col] != Egg.None)
+            //    throw new InvalidOperationException("Duplicate Position: " + row + " " + col);
 
             Eggs[SIZE * row + col] = egg;
         }

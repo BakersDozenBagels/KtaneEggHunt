@@ -11,10 +11,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 615501dbe4f3fe94fbf4b564abb10237, type: 3}
   m_Name: ModConfig
   m_EditorClassIdentifier: 
-  id: eggHunt
+  id: eggHunting
   title: Egg Hunt
   author: Protho04
-  description: 
-  version: 0.1
+  description: When Casey showed me Grand Prix, I knew I wanted to make something
+    like it. it's just so cool! So, I made this. I hope you like it as much as I liked
+    making it. :)
+  version: 1.0
   outputFolder: build
   previewImage: {fileID: 2800000, guid: 4f6d10f1fe300b94497c07c43d1bf3ce, type: 3}
